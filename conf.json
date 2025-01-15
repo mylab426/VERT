@@ -1,0 +1,35 @@
+{
+	"method" : "vert+krum",
+
+	"model_name" : "cnnmnist",
+
+	"type" : "mnist",
+
+	"clients" : 100,
+
+	"candidates" : 90,
+
+	"top_k_score" : 8,
+
+	"poisoner_rate" : 0.9,
+
+	"poison_type" : "ALIE",
+
+	"history_observation" : 10,
+	
+	"global_epochs" : 200,
+	
+	"local_epochs" : 2,
+
+	"predict_epoch" : 5,
+	
+	"batch_size" : 50,
+	
+	"lr" : 0.001,
+
+	"g_lr": 1,
+	
+	"momentum" : 0.0001,
+
+	"dirichlet_alpha" : 0.6
+}
