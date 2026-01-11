@@ -892,32 +892,33 @@ def FedREDefense(e, map_diff, weight_accumulator, conf, poisoner_nums, local_kno
         optimizer_img = torch.optim.SGD([syn_images], lr=0.1, momentum=0.5)
         optimizer_label = torch.optim.SGD([y_hat], lr=0.1, momentum=0.5)
         optimizer_lr = torch.optim.SGD([syn_lr], lr=5e-5, momentum=0.5)
+
+        target_grad = map_diff[_id]
+        target_grad2vec = torch.tensor([]).cuda()
+        for name, data in target_grad.items():
+            if 'running_mean' not in name and 'running_var' not in name and 'num_batches_tracked' not in name:
+                target_grad2vec = torch.cat((target_grad2vec, data.view(-1)), dim=0)
+        target_norm = torch.norm(target_grad2vec) ** 2
+        
         for i in range(100):
-            virtual_model=copy.deepcopy(server.global_model).cuda()
-            vir_optimizer = torch.optim.SGD(virtual_model.parameters(), lr=syn_lr)
+            virtual_model=ReparamModule(copy.deepcopy(server.global_model))
+            virtual_model.train()
+            virtual_params=torch.cat([p.data.cuda().reshape(-1) for p in virtual_model.parameters()], 0).requires_grad_(True)
             for step in range(5):
                 indices = torch.randperm(len(syn_images))
                 x = syn_images[indices]
                 this_y = y_hat[indices]
-                _, x = virtual_model(x)
+                _, x = virtual_model(x, flat_param=virtual_params)
                 ce_loss = kd_loss(x, this_y)
-                vir_optimizer.zero_grad()
-                ce_loss.backward()
-                vir_optimizer.step()
+                grad=torch.autograd.grad(ce_loss, virtual_params, create_graph=True)[0]
+                virtual_params=virtual_params-syn_lr*grad
 
-            virtual_gradient=dict()
-            for name, data in virtual_model.state_dict().items():
-                if data.dtype == torch.int64:
-                    virtual_gradient[name] = torch.tensor(data - server.global_model.state_dict()[name], dtype=torch.float32).requires_grad_(True)
-                else:
-                    virtual_gradient[name] = (data - server.global_model.state_dict()[name]).requires_grad_(True)
+            # virtual_params = torch.cat([p.data.cuda().reshape(-1) for p in virtual_model.parameters()], 0)
+            global_params = torch.cat([p.data.cuda().reshape(-1) for p in server.global_model.parameters()], 0)
+            virtual_gradient=virtual_params-global_params
 
             re_loss = torch.tensor(0.0).cuda()
-            target_grad = map_diff[_id]
-            for name, data in virtual_model.state_dict().items():
-                re_loss+=torch.norm(virtual_gradient[name]-target_grad[name]) ** 2
-
-            target_norm=torch.norm(grad2vector_func(target_grad)) ** 2
+            re_loss+=torch.norm(virtual_gradient-target_grad2vec) ** 2
             re_loss/=target_norm
 
             # if re_loss.detach().cpu() < 0.6:
@@ -1102,6 +1103,7 @@ def FLBeeline(e, candidates, map_diff, weight_accumulator, all_grad2vector, all_
                         weight_accumulator[name].add_(((1 / len(top_k_client)) * data).to(torch.int64))
                     else:
                         weight_accumulator[name].add_((1 / len(top_k_client)) * data)
+
 
 
 
